@@ -385,21 +385,11 @@ function cycleInfo(recharge){
   const total = dates.reduce((s,d)=> s + (recharge.log[d]||0), 0);
   return { today, dayInCycle, pool, dates, total, daysLeft: 4-dayInCycle+1 };
 }
-// build a day-by-day recharge tier plan for the remaining days of the cycle
-// a single day's charge doesn't have to be exactly one tier — the same tier can be
-// bought multiple times in one day (e.g. 2×¥30), so build the set of realistic
-// per-day amounts as tier × repeat-count.
-const DAY_REPEAT_CAP = 5;
-function dayChargeOptions(){
-  const opts = [];
-  RECHARGE_TIERS.forEach(t=>{
-    for(let c=1; c<=DAY_REPEAT_CAP; c++){
-      opts.push({ cost: t*c, tier:t, count:c, label: c>1 ? `${c}×¥${t}` : `¥${t}` });
-    }
-  });
-  return opts;
-}
-
+// build a day-by-day recharge plan for the remaining days of the cycle. A single day's
+// charge can be ANY combination of tiers (e.g. ¥328 + ¥128, not just one tier repeated),
+// so this solves the true minimum-total problem: find the smallest total sum >= remain
+// that can be split into at least n charges (n = un-charged remaining days, each needs
+// >=1 charge), using a small dynamic program over (coin count, sum).
 function buildRechargePlan(target, info, log){
   const remainDates = info.dates.slice(info.dayInCycle - 1); // today onward
   const remain = Math.max(0, target - info.total);
@@ -417,39 +407,55 @@ function buildRechargePlan(target, info, log){
   }
 
   const n = toPlan.length;
-  const options = dayChargeOptions();
-  // brute-force the minimum-total combo of n picks (one per un-charged remaining day, each
-  // day's amount being some tier charged 1-5 times) whose sum covers `remain`. n is at most
-  // 4 and there are 6×5=30 per-day options, so at most 30^4 ≈ 810k combos — still instant.
-  // Tie-break on total number of charges: among equally-cheap combos, prefer fewer, larger
-  // charges (e.g. one ¥30 beats five ¥6 when both total ¥30) since that's simpler to execute.
-  let best = null;
-  const combo = [];
-  function rec(i, sum, count){
-    if(best && sum > best.sum) return; // can't beat current best on cost by adding more
-    if(i === n){
-      if(sum >= remain && (!best || sum < best.sum || (sum === best.sum && count < best.count))){
-        best = { combo: combo.slice(), sum, count };
-      }
-      return;
-    }
-    for(const opt of options){
-      combo.push(opt);
-      rec(i+1, sum+opt.cost, count+opt.count);
-      combo.pop();
-    }
-  }
-  rec(0, 0, 0);
+  const maxTier = RECHARGE_TIERS[RECHARGE_TIERS.length-1];
+  const CAP_C = n + 12;                 // generous cap on total number of charges considered
+  const CAP_S = remain + maxTier * 2;   // generous cap on total sum considered
 
-  let toPlanResults;
-  let shortBy = 0;
-  if(best){
-    toPlanResults = best.combo.slice().sort((a,b)=>b.cost-a.cost); // front-load the bigger charges
-  } else {
-    const maxOpt = options[options.length-1]; // biggest tier × biggest repeat
-    toPlanResults = toPlan.map(()=>maxOpt);
-    shortBy = remain - maxOpt.cost*n;
+  // dp[c][s] = true if sum `s` is reachable using exactly `c` charges (repeats allowed).
+  // parent[c][s] = which tier was used last, for path reconstruction.
+  const dp = Array.from({length:CAP_C+1}, ()=> new Uint8Array(CAP_S+1));
+  const parent = Array.from({length:CAP_C+1}, ()=> new Int16Array(CAP_S+1).fill(-1));
+  dp[0][0] = 1;
+  for(let c=1;c<=CAP_C;c++){
+    const prev = dp[c-1], cur = dp[c], par = parent[c];
+    for(let s=0;s<=CAP_S;s++){
+      for(const t of RECHARGE_TIERS){
+        if(s-t>=0 && prev[s-t]){ cur[s]=1; par[s]=t; break; }
+      }
+    }
   }
+
+  // scan sums ascending from `remain` — the first reachable sum (with >=n charges) is the
+  // global minimum total. Among the coin-counts that can reach it, prefer the fewest charges.
+  let bestS=-1, bestC=-1;
+  for(let s=remain; s<=CAP_S && bestS===-1; s++){
+    for(let c=n; c<=CAP_C; c++){
+      if(dp[c][s]){ bestS=s; bestC=c; break; }
+    }
+  }
+
+  let toPlanResults, shortBy = 0;
+  if(bestS !== -1){
+    // reconstruct the exact list of charges used
+    let coins=[], c=bestC, s=bestS;
+    while(c>0){ const t=parent[c][s]; coins.push(t); s-=t; c--; }
+    coins.sort((a,b)=>b-a); // front-load bigger charges
+    const dayCoins = Array.from({length:n}, ()=>[]);
+    coins.forEach((t,i)=> dayCoins[i%n].push(t)); // spread charges round-robin across days
+    toPlanResults = dayCoins.map(coinsForDay=>{
+      const cost = coinsForDay.reduce((a,b)=>a+b,0);
+      const counts = {};
+      coinsForDay.forEach(t=> counts[t]=(counts[t]||0)+1);
+      const label = Object.keys(counts).map(Number).sort((a,b)=>b-a)
+        .map(t=> counts[t]>1 ? `${counts[t]}×¥${t}` : `¥${t}`).join(' + ');
+      return { cost, label };
+    });
+  } else {
+    // fallback: even the generous cap wasn't enough — max out every day
+    toPlanResults = toPlan.map(()=>({ cost:maxTier, label:`¥${maxTier}` }));
+    shortBy = remain - maxTier*n;
+  }
+
   let i = 0;
   const plan = remainDates.map(d => buildEntry(d) || { date:d, cost: toPlanResults[i].cost, label: toPlanResults[i++].label });
   return { plan, shortBy };
