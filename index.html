@@ -1239,8 +1239,8 @@ function bindEvents(){
     el.onclick = ()=>{
       const resetHour = parseInt(document.getElementById('editResetHourSel').value,10);
       const resetZone = document.querySelector('#editZoneSeg button.active').dataset.zone;
-      setGameReset(el.dataset.game, resetHour, resetZone);
       openEditResetFor = null;
+      setGameReset(el.dataset.game, resetHour, resetZone);
     };
   });
   document.querySelectorAll('.wt-seg').forEach(seg=>{
@@ -1286,9 +1286,9 @@ function bindEvents(){
       const weekType = document.getElementById('newTaskWeekType')?.value || null;
       const dayOfMonth = parseInt(document.getElementById('monthDayInput').value,10) || 1;
       const weekdays = (freq==='weekly'||freq==='biweekly') ? selectedWeekdays.slice().sort((a,b)=>a-b) : null;
-      updateTask(el.dataset.game, el.dataset.task, { name, freq, weekdays, time, weekType, dayOfMonth });
       openEditTaskFor = null;
       taskFormError = null;
+      updateTask(el.dataset.game, el.dataset.task, { name, freq, weekdays, time, weekType, dayOfMonth });
     };
   });
   document.querySelectorAll('[data-action="confirm-add-task"]').forEach(el=>{
@@ -1300,9 +1300,9 @@ function bindEvents(){
       const time = document.getElementById('newTaskTime').value || null;
       const weekType = document.getElementById('newTaskWeekType')?.value || null;
       const dayOfMonth = parseInt(document.getElementById('monthDayInput').value,10) || 1;
-      addTask(el.dataset.game, name, freq, selectedWeekdays, {time, weekType, dayOfMonth});
       openAddTaskFor = null;
       taskFormError = null;
+      addTask(el.dataset.game, name, freq, selectedWeekdays, {time, weekType, dayOfMonth});
     };
   });
   const freqSeg = document.getElementById('freqSeg');
@@ -1340,8 +1340,8 @@ function bindEvents(){
       const name = document.getElementById('newGameName').value.trim();
       if(!name) return;
       const resetHour = parseInt(document.getElementById('resetHourSel').value,10);
-      addGame(name, resetHour, addGameZonePick);
       openAddGame = false;
+      addGame(name, resetHour, addGameZonePick);
     };
   });
 
@@ -1361,8 +1361,8 @@ function bindEvents(){
       const permanent = document.getElementById('newEventPermanent').checked;
       const startDate = document.getElementById('newEventStart').value || null;
       const endDate = permanent ? null : (document.getElementById('newEventEnd').value || null);
-      addEvent(el.dataset.game, name, startDate, endDate, permanent);
       openAddEventFor = null;
+      addEvent(el.dataset.game, name, startDate, endDate, permanent);
     };
   });
 
@@ -1375,8 +1375,8 @@ function bindEvents(){
       const name = document.getElementById('newEventTaskName').value.trim();
       if(!name) return;
       const time = document.getElementById('newEventTaskTime').value || null;
-      addEventTask(el.dataset.game, el.dataset.event, name, time);
       openAddEventTaskFor = null;
+      addEventTask(el.dataset.game, el.dataset.event, name, time);
     };
   });
   document.querySelectorAll('[data-action="open-edit-event-task"]').forEach(el=>{
@@ -1394,8 +1394,8 @@ function bindEvents(){
       const name = document.getElementById('editEventTaskName').value.trim();
       if(!name) return;
       const time = document.getElementById('editEventTaskTime').value || null;
-      updateEventTask(el.dataset.game, el.dataset.event, el.dataset.task, name, time);
       openEditEventTaskFor = null;
+      updateEventTask(el.dataset.game, el.dataset.event, el.dataset.task, name, time);
     };
   });
 
@@ -1411,8 +1411,8 @@ function bindEvents(){
       const dayInCycle = parseInt(document.getElementById('rcDayInCycle').value,10);
       const today = new Date(todayLocalStr()+'T00:00:00Z');
       today.setUTCDate(today.getUTCDate() - (dayInCycle-1));
-      enableRecharge(el.dataset.game, dateStrUTC(today), pool);
       openAddRechargeFor = null;
+      enableRecharge(el.dataset.game, dateStrUTC(today), pool);
     };
   });
   document.querySelectorAll('[data-action="open-edit-recharge-day"]').forEach(el=>{
