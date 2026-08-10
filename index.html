@@ -30,6 +30,8 @@
   .clock-row{ display:flex; align-items:baseline; justify-content:flex-end; gap:5px; font-family:'Rajdhani',sans-serif; font-size:15px; font-weight:600; line-height:1.5; }
   .clock-row .cflag{font-size:12px;}
   .clock-row.cn{color:var(--gold);} .clock-row.uk{color:var(--teal);}
+  .settings-toggle{ font-size:10.5px; color:var(--text-muted); margin-top:4px; cursor:pointer; }
+  .settings-toggle:hover{ color:var(--gold); }
 
   .summary{
     background:linear-gradient(135deg,var(--panel),var(--panel-2)); border:1px solid var(--border);
@@ -215,7 +217,7 @@
 
 <script>
 const STORAGE_KEY = 'gametasktracker:data';
-let state = { games: [] };
+let state = { games: [], settings: { showDualZone: true, userZone: 'Europe/London' } };
 let openAddTaskFor = null;
 let openAddGame = false;
 let openAddEventFor = null;
@@ -226,6 +228,7 @@ let openEditTaskFor = null;      // {gameId, taskId}
 let openEditEventTaskFor = null; // {gameId, eventId, taskId}
 let openEditRechargeDayFor = null; // {gameId, date}
 let rechargeCalcFor = null; // {gameId, target} — persists the last "算一下" result across re-renders
+let openSettings = false;
 let confirmDeleteTarget = null; // {type:'game'|'event'|'recharge', gameId, eventId}
 let presetAddNotice = null;
 let taskFormError = null;
@@ -237,8 +240,23 @@ let storageReady = false;
 const WEEKDAYS = ['周日','周一','周二','周三','周四','周五','周六'];
 const ZONES = {
   'Asia/Shanghai': { flag:'🇨🇳', name:'北京' },
-  'Europe/London': { flag:'🇬🇧', name:'伦敦' }
+  'Europe/London': { flag:'🇬🇧', name:'伦敦' },
+  'America/New_York': { flag:'🇺🇸', name:'纽约' },
+  'America/Chicago': { flag:'🇺🇸', name:'芝加哥' },
+  'America/Los_Angeles': { flag:'🇺🇸', name:'洛杉矶' },
+  'Europe/Paris': { flag:'🇫🇷', name:'巴黎' },
+  'Europe/Berlin': { flag:'🇩🇪', name:'柏林' },
+  'Asia/Tokyo': { flag:'🇯🇵', name:'东京' },
+  'Asia/Seoul': { flag:'🇰🇷', name:'首尔' },
+  'Asia/Singapore': { flag:'🇸🇬', name:'新加坡' },
+  'Asia/Hong_Kong': { flag:'🇭🇰', name:'香港' },
+  'Asia/Kolkata': { flag:'🇮🇳', name:'印度' },
+  'Australia/Sydney': { flag:'🇦🇺', name:'悉尼' }
 };
+// zones offered in the "我所在的时区" picker (a curated subset of ZONES, Beijing excluded
+// since that's already the fixed baseline shown everywhere)
+const USER_ZONE_OPTIONS = ['Europe/London','America/New_York','America/Chicago','America/Los_Angeles',
+  'Europe/Paris','Europe/Berlin','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Hong_Kong','Asia/Kolkata','Australia/Sydney'];
 const RECHARGE_TIERS = [6,30,68,128,328,648];
 const CUMULATIVE_TIERS = [30,68,128,328,648,988,1288,1888];
 
@@ -279,13 +297,21 @@ function convertClock(hour, minute, fromZone, toZone){
   while(totalMin >= 1440){ totalMin -= 1440; dayShift += 1; }
   return { hour: Math.floor(totalMin / 60), minute: totalMin % 60, dayShift };
 }
+// time-difference display is an independent, opt-in setting (state.settings.showDualZone) —
+// when off, only the source zone's own time is shown; when on, it's paired with whichever
+// zone the user picked as "我所在的时区" (state.settings.userZone).
 function formatTimeBothZones(hour, minute, zone, suffix){
-  const other = zone === 'Asia/Shanghai' ? 'Europe/London' : 'Asia/Shanghai';
-  const conv = convertClock(hour, minute, zone, other);
-  const zA = ZONES[zone], zB = ZONES[other];
-  const note = conv.dayShift === -1 ? ' 前一天' : conv.dayShift === 1 ? ' 次日' : '';
   const s = suffix || '';
-  return `${zA.flag} ${zA.name} ${pad(hour)}:${pad(minute)}${s}<span class="sep">·</span>${zB.flag} ${zB.name} ${pad(conv.hour)}:${pad(conv.minute)}${note}${s}`;
+  const zA = ZONES[zone] || { flag:'🌐', name:zone };
+  const base = `${zA.flag} ${zA.name} ${pad(hour)}:${pad(minute)}${s}`;
+  const settings = state.settings || { showDualZone:true, userZone:'Europe/London' };
+  if(!settings.showDualZone) return base;
+  const other = settings.userZone;
+  if(!other || other === zone) return base;
+  const conv = convertClock(hour, minute, zone, other);
+  const zB = ZONES[other] || { flag:'🌐', name:other };
+  const note = conv.dayShift === -1 ? ' 前一天' : conv.dayShift === 1 ? ' 次日' : '';
+  return `${base}<span class="sep">·</span>${zB.flag} ${zB.name} ${pad(conv.hour)}:${pad(conv.minute)}${note}${s}`;
 }
 function formatResetBothZones(hour, zone){ return formatTimeBothZones(hour, 0, zone, ''); }
 function gameZone(game){ return game.resetZone || 'Asia/Shanghai'; }
@@ -477,6 +503,7 @@ function buildRechargePlan(target, info, log){
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
 function normalize(){
+  state.settings = state.settings || { showDualZone: true, userZone: 'Europe/London' };
   state.games.forEach(g=>{
     g.resetZone = g.resetZone || 'Asia/Shanghai';
     g.tasks = g.tasks || [];
@@ -644,6 +671,10 @@ function setRechargePool(gameId, pool){
   // "today" and future 4-day cycles alternate correctly from here on
   game.recharge.refDate = info.dates[0];
   game.recharge.refPool = pool;
+  save(); render();
+}
+function setSettings(patch){
+  state.settings = Object.assign({}, state.settings, patch);
   save(); render();
 }
 
@@ -1120,7 +1151,9 @@ function render(){
   const now = new Date();
   const dateLabel = `${now.getMonth()+1}月${now.getDate()}日 · ${WEEKDAYS[now.getDay()]}`;
   const cnTime = now.toLocaleTimeString('zh-CN', {timeZone:'Asia/Shanghai', hour:'2-digit', minute:'2-digit', hour12:false});
-  const ukTime = now.toLocaleTimeString('zh-CN', {timeZone:'Europe/London', hour:'2-digit', minute:'2-digit', hour12:false});
+  const settings = state.settings;
+  const userZoneInfo = ZONES[settings.userZone] || { flag:'🌐', name:settings.userZone };
+  const userTime = settings.showDualZone ? now.toLocaleTimeString('zh-CN', {timeZone:settings.userZone, hour:'2-digit', minute:'2-digit', hour12:false}) : '';
 
   let total = 0, done = 0;
   state.games.forEach(g=>{
@@ -1137,9 +1170,24 @@ function render(){
     <div><h1>任务<span>清单</span></h1><div class="date">${dateLabel}</div></div>
     <div class="clock-zones">
       <div class="clock-row cn"><span class="cflag">🇨🇳</span>${cnTime}</div>
-      <div class="clock-row uk"><span class="cflag">🇬🇧</span>${ukTime}</div>
+      ${settings.showDualZone ? `<div class="clock-row uk"><span class="cflag">${userZoneInfo.flag}</span>${userTime}</div>` : ''}
+      <div class="settings-toggle" data-action="toggle-settings">⚙ 时差设置</div>
     </div>
   </header>
+  ${openSettings ? `
+  <div class="inline-form">
+    <label class="chk-label"><input type="checkbox" id="showDualZoneChk" ${settings.showDualZone?'checked':''}> 显示时差（双时区）</label>
+    ${settings.showDualZone ? `
+    <div class="row-flex" style="margin-top:8px;">
+      <span class="field-label" style="width:auto;margin-bottom:0;">我所在的时区</span>
+      <select id="userZoneSel">
+        ${USER_ZONE_OPTIONS.map(z=>`<option value="${z}" ${settings.userZone===z?'selected':''}>${ZONES[z].flag} ${ZONES[z].name}</option>`).join('')}
+      </select>
+    </div>` : ''}
+    <div class="form-actions" style="margin-top:10px;">
+      <button class="btn btn-primary" data-action="close-settings">完成</button>
+    </div>
+  </div>` : ''}
   <div class="summary">
     ${total === 0 ? `<div class="summary-empty">还没有任务，添加一个游戏开始追踪吧 👇</div>` : `
       <div class="summary-top"><span class="label">当前周期待办完成度</span><span class="count rj">${done}/${total}</span></div>
@@ -1184,7 +1232,7 @@ function render(){
     html += `<div class="add-game-card" data-action="open-add-game">＋ 添加游戏</div>`;
   }
 
-  html += `<div class="footer-note">独立版 · 数据保存在这台设备的浏览器里，换设备/换浏览器不会同步 · 时间自动按北京/伦敦当前时差换算</div>`;
+  html += `<div class="footer-note">独立版 · 数据保存在这台设备的浏览器里，换设备/换浏览器不会同步 · 时间可选是否显示双时区</div>`;
 
   app.innerHTML = html;
   bindEvents();
@@ -1256,6 +1304,21 @@ function bindEvents(){
 
   const viewSeg = document.getElementById('viewSeg');
   if(viewSeg){ viewSeg.querySelectorAll('button').forEach(b=>{ b.onclick = ()=>{ viewMode = b.dataset.view; render(); }; }); }
+
+  document.querySelectorAll('[data-action="toggle-settings"]').forEach(el=>{
+    el.onclick = ()=> { openSettings = !openSettings; render(); };
+  });
+  document.querySelectorAll('[data-action="close-settings"]').forEach(el=>{
+    el.onclick = ()=> { openSettings = false; render(); };
+  });
+  const showDualZoneChk = document.getElementById('showDualZoneChk');
+  if(showDualZoneChk){
+    showDualZoneChk.onchange = ()=> setSettings({ showDualZone: showDualZoneChk.checked });
+  }
+  const userZoneSel = document.getElementById('userZoneSel');
+  if(userZoneSel){
+    userZoneSel.onchange = ()=> setSettings({ userZone: userZoneSel.value });
+  }
 
   document.querySelectorAll('[data-action="open-add-task"]').forEach(el=>{
     el.onclick = ()=> { openAddTaskFor = el.dataset.game; openEditTaskFor = null; selectedWeekdays = [new Date().getDay()]; taskFormError = null; render(); };
