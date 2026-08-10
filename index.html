@@ -46,9 +46,6 @@
   .bar-fill{ height:100%; background:linear-gradient(90deg,var(--gold),var(--teal)); border-radius:5px; transition:width .35s ease; }
   .summary-empty{font-size:13px;color:var(--text-muted);}
 
-  .view-toggle{ display:flex; justify-content:center; margin-bottom:20px; }
-  .view-seg button{ padding:8px 16px; }
-
   .game-card{ background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:16px 14px 10px; margin-bottom:16px; }
   .game-head{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; padding:0 2px; gap:8px; }
   .game-head h2{ font-family:'Rajdhani',sans-serif; font-size:19px; font-weight:700; margin:0 0 4px; }
@@ -140,7 +137,6 @@
     font-family:'Inter',sans-serif; white-space:nowrap; }
   .seg button.active{background:var(--gold);color:#1a1625;font-weight:600;}
   .seg.zone-seg button.active{background:var(--teal);color:#0e1c1c;}
-  .seg.view-seg button.active{background:var(--violet);color:#1a1625;}
   select{ background:var(--bg-alt);border:1px solid var(--border);color:var(--text); border-radius:8px;padding:7px 9px;font-size:12.5px; }
   .form-actions{display:flex;gap:8px;justify-content:flex-end;}
   .btn{ border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer; font-family:'Inter',sans-serif; }
@@ -171,7 +167,6 @@
   .loading, .error-box{ text-align:center;color:var(--text-muted);padding:60px 10px;font-size:14px; }
   .error-box{color:var(--red);}
   .footer-note{ text-align:center;color:var(--text-muted);font-size:11.5px;margin-top:10px;opacity:0.7; }
-  .sched-source{ font-size:10.5px; color:var(--text-muted); }
 
   /* recharge panel */
   .recharge-panel{ background:var(--panel-2); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:6px; }
@@ -232,7 +227,6 @@ let openSettings = false;
 let confirmDeleteTarget = null; // {type:'game'|'event'|'recharge', gameId, eventId}
 let presetAddNotice = null;
 let taskFormError = null;
-let viewMode = 'activity';
 let selectedWeekdays = [new Date().getDay()];
 let addGameZonePick = 'Asia/Shanghai';
 let storageReady = false;
@@ -1090,60 +1084,6 @@ function renderRechargeSection(game){
   return html;
 }
 
-function renderTimeView(){
-  const entries = [];
-  state.games.forEach(game=>{
-    const zone = gameZone(game);
-    game.tasks.forEach(task=>{
-      if(!isTaskActive(task, game) || !isTaskDueToday(task, game)) return;
-      const h = task.time ? +task.time.split(':')[0] : game.resetHour;
-      const m = task.time ? +task.time.split(':')[1] : 0;
-      const conv = convertClock(h, m, zone, 'Asia/Shanghai');
-      entries.push({
-        kind:'recurring', gameId:game.id, taskId:task.id,
-        name:task.name, source: game.name, badge: freqLabel(task),
-        timeStr: formatTimeBothZones(h, m, zone, ''),
-        done: isDone(task, game),
-        sortKey: conv.hour*60+conv.minute+conv.dayShift*1440,
-        freqAttr: task.freq
-      });
-    });
-    game.events.forEach(event=>{
-      if(eventStatus(event, game).code !== 'ongoing') return;
-      event.tasks.forEach(etask=>{
-        if(!etask.time) return;
-        const [h,m] = etask.time.split(':').map(Number);
-        const conv = convertClock(h,m, zone, 'Asia/Shanghai');
-        entries.push({
-          kind:'event', gameId:game.id, eventId:event.id, taskId:etask.id,
-          name:etask.name, source: `${game.name} · ${event.name}`, badge:'活动',
-          timeStr: formatTimeBothZones(h,m,zone,''), done: etask.done,
-          sortKey: conv.hour*60+conv.minute+conv.dayShift*1440, freqAttr:'event'
-        });
-      });
-    });
-  });
-  entries.sort((a,b)=>a.sortKey-b.sortKey);
-  entries.sort((a,b)=> (a.done?1:0) - (b.done?1:0));
-  if(entries.length===0){
-    return `<div class="empty-tasks" style="padding:20px 4px;">还没有可安排时间的任务。常规任务会按重置时间排列，活动任务需要设置提醒时间才会出现在这里。</div>`;
-  }
-  return entries.map(en=>{
-    const toggleAttrs = en.kind==='recurring'
-      ? `data-action="toggle" data-game="${en.gameId}" data-task="${en.taskId}"`
-      : `data-action="toggle-event-task" data-game="${en.gameId}" data-event="${en.eventId}" data-task="${en.taskId}"`;
-    return `
-    <div class="task-ticket ${en.done?'done':''}" data-freq="${en.freqAttr}">
-      <div class="checkbox ${en.done?'checked':''}" ${toggleAttrs}>${en.done?'✓':''}</div>
-      <div class="task-body">
-        <div class="task-name">${escapeHtml(en.name)}</div>
-        <div class="task-meta"><span class="freq-badge">${en.badge}</span><span class="time-badge">${en.timeStr}</span></div>
-        <div class="sched-source">${escapeHtml(en.source)}</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 function render(){
   const app = document.getElementById('app');
   if(!storageReady){ app.innerHTML = '<div class="loading">加载中…</div>'; return; }
@@ -1192,16 +1132,9 @@ function render(){
     ${total === 0 ? `<div class="summary-empty">还没有任务，添加一个游戏开始追踪吧 👇</div>` : `
       <div class="summary-top"><span class="label">当前周期待办完成度</span><span class="count rj">${done}/${total}</span></div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>`}
-  </div>
-  <div class="view-toggle">
-    <div class="seg view-seg" id="viewSeg">
-      <button data-view="activity" class="${viewMode==='activity'?'active':''}">按活动</button>
-      <button data-view="time" class="${viewMode==='time'?'active':''}">按任务时间</button>
-    </div>
   </div>`;
 
-  if(viewMode === 'time'){ html += renderTimeView(); }
-  else { state.games.forEach(game=>{ html += renderGameCard(game); }); }
+  state.games.forEach(game=>{ html += renderGameCard(game); });
 
   if(openAddGame){
     html += `
@@ -1301,9 +1234,6 @@ function bindEvents(){
       b.onclick = ()=> setRechargePool(seg.dataset.game, b.dataset.pool);
     });
   });
-
-  const viewSeg = document.getElementById('viewSeg');
-  if(viewSeg){ viewSeg.querySelectorAll('button').forEach(b=>{ b.onclick = ()=>{ viewMode = b.dataset.view; render(); }; }); }
 
   document.querySelectorAll('[data-action="toggle-settings"]').forEach(el=>{
     el.onclick = ()=> { openSettings = !openSettings; render(); };
