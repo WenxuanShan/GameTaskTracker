@@ -234,23 +234,57 @@ let storageReady = false;
 const WEEKDAYS = ['周日','周一','周二','周三','周四','周五','周六'];
 const ZONES = {
   'Asia/Shanghai': { flag:'🇨🇳', name:'北京' },
-  'Europe/London': { flag:'🇬🇧', name:'伦敦' },
-  'America/New_York': { flag:'🇺🇸', name:'纽约' },
-  'America/Chicago': { flag:'🇺🇸', name:'芝加哥' },
+  'Pacific/Pago_Pago': { flag:'🇦🇸', name:'帕果帕果' },
+  'Pacific/Honolulu': { flag:'🇺🇸', name:'夏威夷' },
+  'America/Anchorage': { flag:'🇺🇸', name:'阿拉斯加' },
+  'America/Vancouver': { flag:'🇨🇦', name:'温哥华' },
   'America/Los_Angeles': { flag:'🇺🇸', name:'洛杉矶' },
+  'America/Denver': { flag:'🇺🇸', name:'丹佛' },
+  'America/Mexico_City': { flag:'🇲🇽', name:'墨西哥城' },
+  'America/Chicago': { flag:'🇺🇸', name:'芝加哥' },
+  'America/Toronto': { flag:'🇨🇦', name:'多伦多' },
+  'America/New_York': { flag:'🇺🇸', name:'纽约' },
+  'America/Halifax': { flag:'🇨🇦', name:'哈利法克斯' },
+  'America/Sao_Paulo': { flag:'🇧🇷', name:'圣保罗' },
+  'Atlantic/South_Georgia': { flag:'🇬🇸', name:'南乔治亚' },
+  'Atlantic/Azores': { flag:'🇵🇹', name:'亚速尔群岛' },
+  'Europe/London': { flag:'🇬🇧', name:'伦敦' },
   'Europe/Paris': { flag:'🇫🇷', name:'巴黎' },
   'Europe/Berlin': { flag:'🇩🇪', name:'柏林' },
-  'Asia/Tokyo': { flag:'🇯🇵', name:'东京' },
-  'Asia/Seoul': { flag:'🇰🇷', name:'首尔' },
+  'Africa/Cairo': { flag:'🇪🇬', name:'开罗' },
+  'Europe/Moscow': { flag:'🇷🇺', name:'莫斯科' },
+  'Asia/Tehran': { flag:'🇮🇷', name:'德黑兰' },
+  'Asia/Dubai': { flag:'🇦🇪', name:'迪拜' },
+  'Asia/Kabul': { flag:'🇦🇫', name:'喀布尔' },
+  'Asia/Karachi': { flag:'🇵🇰', name:'卡拉奇' },
+  'Asia/Kolkata': { flag:'🇮🇳', name:'印度' },
+  'Asia/Kathmandu': { flag:'🇳🇵', name:'加德满都' },
+  'Asia/Dhaka': { flag:'🇧🇩', name:'达卡' },
+  'Asia/Yangon': { flag:'🇲🇲', name:'仰光' },
+  'Asia/Bangkok': { flag:'🇹🇭', name:'曼谷' },
   'Asia/Singapore': { flag:'🇸🇬', name:'新加坡' },
   'Asia/Hong_Kong': { flag:'🇭🇰', name:'香港' },
-  'Asia/Kolkata': { flag:'🇮🇳', name:'印度' },
-  'Australia/Sydney': { flag:'🇦🇺', name:'悉尼' }
+  'Australia/Perth': { flag:'🇦🇺', name:'珀斯' },
+  'Asia/Tokyo': { flag:'🇯🇵', name:'东京' },
+  'Asia/Seoul': { flag:'🇰🇷', name:'首尔' },
+  'Australia/Darwin': { flag:'🇦🇺', name:'达尔文' },
+  'Australia/Sydney': { flag:'🇦🇺', name:'悉尼' },
+  'Pacific/Noumea': { flag:'🇳🇨', name:'努美阿' },
+  'Pacific/Auckland': { flag:'🇳🇿', name:'奥克兰' },
+  'Pacific/Tongatapu': { flag:'🇹🇴', name:'汤加' },
+  'Pacific/Kiritimati': { flag:'🇰🇮', name:'基里巴斯' }
 };
-// zones offered in the "我所在的时区" picker (a curated subset of ZONES, Beijing excluded
+// zones offered in the "我所在的时区" picker — one representative per UTC offset from
+// roughly UTC-11 to UTC+14, so anyone in the world can find their own (Beijing excluded
 // since that's already the fixed baseline shown everywhere)
-const USER_ZONE_OPTIONS = ['Europe/London','America/New_York','America/Chicago','America/Los_Angeles',
-  'Europe/Paris','Europe/Berlin','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Hong_Kong','Asia/Kolkata','Australia/Sydney'];
+const USER_ZONE_OPTIONS = [
+  'Pacific/Pago_Pago','Pacific/Honolulu','America/Anchorage','America/Vancouver','America/Los_Angeles','America/Denver',
+  'America/Mexico_City','America/Chicago','America/Toronto','America/New_York','America/Halifax','America/Sao_Paulo','Atlantic/South_Georgia',
+  'Atlantic/Azores','Europe/London','Europe/Paris','Europe/Berlin','Africa/Cairo','Europe/Moscow',
+  'Asia/Tehran','Asia/Dubai','Asia/Kabul','Asia/Karachi','Asia/Kolkata','Asia/Kathmandu','Asia/Dhaka',
+  'Asia/Yangon','Asia/Bangkok','Asia/Singapore','Asia/Hong_Kong','Australia/Perth','Asia/Tokyo','Asia/Seoul',
+  'Australia/Darwin','Australia/Sydney','Pacific/Noumea','Pacific/Auckland','Pacific/Tongatapu','Pacific/Kiritimati'
+];
 const RECHARGE_TIERS = [6,30,68,128,328,648];
 const CUMULATIVE_TIERS = [30,68,128,328,648,988,1288,1888];
 
@@ -259,12 +293,15 @@ function dateStrUTC(d){ return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-
 function todayLocalStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 
 function tzOffsetMinutes(timeZone, date){
+  const d = new Date(date); d.setSeconds(0, 0); // truncate to a whole minute so both
+  // sides of the comparison below line up exactly — otherwise leftover seconds cause a
+  // systematic ±1 minute rounding error in the offset (and every conversion using it).
   const dtf = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle:'h23',
     year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
   const parts = {};
-  dtf.formatToParts(date).forEach(p => { if(p.type !== 'literal') parts[p.type] = p.value; });
+  dtf.formatToParts(d).forEach(p => { if(p.type !== 'literal') parts[p.type] = p.value; });
   const asUTC = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute);
-  return Math.round((asUTC - date.getTime()) / 60000);
+  return Math.round((asUTC - d.getTime()) / 60000);
 }
 function nowInZone(timeZone){
   const now = new Date();
@@ -309,6 +346,13 @@ function formatTimeBothZones(hour, minute, zone, suffix){
 }
 function formatResetBothZones(hour, zone){ return formatTimeBothZones(hour, 0, zone, ''); }
 function gameZone(game){ return game.resetZone || 'Asia/Shanghai'; }
+function utcOffsetLabel(zone){
+  const mins = tzOffsetMinutes(zone, new Date());
+  const sign = mins < 0 ? '-' : '+';
+  const abs = Math.abs(mins);
+  const h = Math.floor(abs/60), m = abs%60;
+  return `UTC${sign}${h}${m ? ':'+pad(m) : ''}`;
+}
 
 function mostRecentOccurrence(weekdays, eff){
   let d = new Date(eff);
@@ -1121,7 +1165,7 @@ function render(){
     <div class="row-flex" style="margin-top:8px;">
       <span class="field-label" style="width:auto;margin-bottom:0;">我所在的时区</span>
       <select id="userZoneSel">
-        ${USER_ZONE_OPTIONS.map(z=>`<option value="${z}" ${settings.userZone===z?'selected':''}>${ZONES[z].flag} ${ZONES[z].name}</option>`).join('')}
+        ${USER_ZONE_OPTIONS.map(z=>`<option value="${z}" ${settings.userZone===z?'selected':''}>${utcOffsetLabel(z)} ${ZONES[z].flag} ${ZONES[z].name}</option>`).join('')}
       </select>
     </div>` : ''}
     <div class="form-actions" style="margin-top:10px;">
@@ -1141,7 +1185,7 @@ function render(){
     <div class="inline-form">
       <div class="add-game-card preset-btn" data-action="add-preset-dulala" style="margin-bottom:12px;">＋杜拉拉升职记（预设任务模板）</div>
       <div class="field-label" style="text-align:center;margin-bottom:10px;">— 或手动添加游戏 —</div>
-      <input type="text" id="newGameName" placeholder="游戏名称，例如：原神" maxlength="30">
+      <input type="text" id="newGameName" placeholder="游戏名称，例如：王者荣耀" maxlength="30">
       <div class="row-flex">
         <span class="field-label">重置时间所属时区</span>
         <div class="seg zone-seg" id="zoneSeg">
