@@ -225,6 +225,7 @@ let openEditResetFor = null;
 let openEditTaskFor = null;      // {gameId, taskId}
 let openEditEventTaskFor = null; // {gameId, eventId, taskId}
 let openEditRechargeDayFor = null; // {gameId, date}
+let rechargeCalcFor = null; // {gameId, target} — persists the last "算一下" result across re-renders
 let confirmDeleteTarget = null; // {type:'game'|'event'|'recharge', gameId, eventId}
 let presetAddNotice = null;
 let taskFormError = null;
@@ -950,6 +951,40 @@ function renderGameCard(game){
   return html;
 }
 
+function renderRechargePlanHTML(game, info, target){
+  if(info.total >= target){
+    return `<div class="rc-plan-total">已经达到 ¥${target} 档位啦 🎉</div>`;
+  }
+  const { plan, shortBy } = buildRechargePlan(target, info, game.recharge.log);
+  const newCost = plan.reduce((s,p)=>s + (p.alreadyAmount ? 0 : p.cost), 0);
+  const maxAmt = Math.max(1, ...plan.map(p=> p.alreadyAmount || p.cost));
+  const dayCards = plan.map(p=>{
+    const label = p.date === info.today ? '今天' : p.date.slice(5);
+    const todayCls = p.date === info.today ? 'today' : '';
+    if(p.alreadyAmount){
+      return `<div class="rc-plan-day already ${todayCls}">
+        <div class="rc-plan-date">${label}</div>
+        <div class="rc-plan-amt">¥${p.alreadyAmount}</div>
+        <div class="rc-plan-sub">已充 · 无需再充</div>
+      </div>`;
+    }
+    const barPct = Math.round((p.cost / maxAmt) * 100);
+    return `<div class="rc-plan-day ${todayCls}">
+      <div class="rc-plan-date">${label}</div>
+      <div class="rc-plan-amt">¥${p.cost}</div>
+      <div class="rc-plan-sub">${p.cost === 0 ? '不用充' : p.label}</div>
+      <div class="rc-plan-bar-track"><div class="rc-plan-bar-fill" style="width:${barPct}%"></div></div>
+    </div>`;
+  }).join('');
+  if(shortBy > 0){
+    return `<div class="rc-plan-days">${dayCards}</div>
+      <div class="rc-plan-short">就算未充值的天数每天都充满，还差¥${shortBy}，可能需要额外加充一次</div>`;
+  }
+  return `<div class="rc-plan-summary">还差 <b>¥${target - info.total}</b>，剩余未充天数都充、总花费最少的方案：</div>
+    <div class="rc-plan-days">${dayCards}</div>
+    <div class="rc-plan-total">还需再花 <b>¥${newCost}</b></div>`;
+}
+
 function renderRechargeSection(game){
   if(!game.recharge){
     if(openAddRechargeFor === game.id){
@@ -1005,11 +1040,11 @@ function renderRechargeSection(game){
     <div class="rc-calc-row">
       <span class="field-label" style="width:auto;margin-bottom:0;">目标档位</span>
       <select id="rcTargetSel_${game.id}">
-        ${CUMULATIVE_TIERS.map(t=>`<option value="${t}">¥${t}</option>`).join('')}
+        ${CUMULATIVE_TIERS.map(t=>`<option value="${t}" ${rechargeCalcFor && rechargeCalcFor.gameId===game.id && rechargeCalcFor.target===t ? 'selected':''}>¥${t}</option>`).join('')}
       </select>
       <button class="btn btn-small" data-action="calc-recharge" data-game="${game.id}">算一下</button>
     </div>
-    <div class="rc-calc-result" id="rcResult_${game.id}"></div>
+    <div class="rc-calc-result" id="rcResult_${game.id}">${rechargeCalcFor && rechargeCalcFor.gameId===game.id ? renderRechargePlanHTML(game, info, rechargeCalcFor.target) : ''}</div>
     <div class="rc-ref-table">
       <div class="rc-ref-title">招财猫参考（每轮次可抽次数）</div>
       0元（2红钻，10%概率10倍，白嫖20）=1次 · <b>¥6</b>=3次 · <b>¥30</b>=4次(2份=5次) · <b>¥68</b>=5次(2份=7次) · <b>¥128</b>=6次(2份=8次) · <b>¥328</b>=7次(2份=9次) · <b>¥648</b>=8次(2份=11次拿满)
@@ -1399,40 +1434,9 @@ function bindEvents(){
   document.querySelectorAll('[data-action="calc-recharge"]').forEach(el=>{
     el.onclick = ()=>{
       const gameId = el.dataset.game;
-      const game = state.games.find(g=>g.id===gameId);
-      const info = cycleInfo(game.recharge);
       const target = parseInt(document.getElementById('rcTargetSel_'+gameId).value,10);
-      const resultEl = document.getElementById('rcResult_'+gameId);
-      if(info.total >= target){ resultEl.innerHTML = `<div class="rc-plan-total">已经达到 ¥${target} 档位啦 🎉</div>`; return; }
-      const { plan, shortBy } = buildRechargePlan(target, info, game.recharge.log);
-      const newCost = plan.reduce((s,p)=>s + (p.alreadyAmount ? 0 : p.cost), 0);
-      const maxAmt = Math.max(1, ...plan.map(p=> p.alreadyAmount || p.cost));
-      const dayCards = plan.map(p=>{
-        const label = p.date === info.today ? '今天' : p.date.slice(5);
-        const todayCls = p.date === info.today ? 'today' : '';
-        if(p.alreadyAmount){
-          return `<div class="rc-plan-day already ${todayCls}">
-            <div class="rc-plan-date">${label}</div>
-            <div class="rc-plan-amt">¥${p.alreadyAmount}</div>
-            <div class="rc-plan-sub">已充 · 无需再充</div>
-          </div>`;
-        }
-        const barPct = Math.round((p.cost / maxAmt) * 100);
-        return `<div class="rc-plan-day ${todayCls}">
-          <div class="rc-plan-date">${label}</div>
-          <div class="rc-plan-amt">¥${p.cost}</div>
-          <div class="rc-plan-sub">${p.cost === 0 ? '不用充' : p.label}</div>
-          <div class="rc-plan-bar-track"><div class="rc-plan-bar-fill" style="width:${barPct}%"></div></div>
-        </div>`;
-      }).join('');
-      let html = `<div class="rc-plan-summary">还差 <b>¥${target - info.total}</b>，剩余未充天数都充、总花费最少的方案：</div>
-        <div class="rc-plan-days">${dayCards}</div>
-        <div class="rc-plan-total">还需再花 <b>¥${newCost}</b></div>`;
-      if(shortBy > 0){
-        html = `<div class="rc-plan-days">${dayCards}</div>
-          <div class="rc-plan-short">就算未充值的天数每天都充满5次最高档，还差¥${shortBy}，可能需要额外加充一次</div>`;
-      }
-      resultEl.innerHTML = html;
+      rechargeCalcFor = { gameId, target };
+      render();
     };
   });
 }
